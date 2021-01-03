@@ -1,0 +1,327 @@
+---
+title: "Time Series Honors Project"
+author: "Mosharraf Hossain"
+date: "12/12/2020"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#South Dakota Cases 
+library(forecast)
+library(ggplot2)
+library(dplyr)
+library(readxl)
+
+COVID_Cases_over_time <- read_excel("/Users/mosharraf/Downloads/Exploratory and Cloud Data Analytics/Final Project/COVID Cases over time.xls")
+
+SD <- subset(COVID_Cases_over_time, state=="SD", select = c(date, new_case))
+names(SD)[2] <- "SD"
+plot(SD, type ='l', main = "Daily COVID cases in SD", xlab="Day", ylab = "Cases")
+
+SD_7<- sapply(split(SD$SD, c(0, rep(1:(nrow(SD)-1)%/%7))), mean)
+#Weekly cases
+plot(SD_7, type ='o', main = "Weekly COVID cases in SD", xlab="Week", ylab = "Cases")
+```
+
+
+```{r}
+#We are going to find a suitable ARIMA model and make a prediction model based on that
+SD_7 <- as.matrix(SD_7)
+
+covid.fit.221<-auto.arima(SD_7) 
+res.covid.221<-as.vector(residuals(covid.fit.221)) 
+library(forecast) 
+fit.covid.221<-as.vector(fitted(covid.fit.221)) 
+str(fit.covid.221)
+
+acf(SD_7[,1])
+Box.test(SD_7[,1], lag=10, type="Ljung-Box")
+
+```
+
+
+
+```{r}
+#Our ARIMA 221 model on top of the Covid cases in SD
+plot(SD_7, ,type="p",pch=16,cex=.5,xlab='Weeks',ylab='Weekly Covid Cases', ylim = c(0,1500), main="Weekly Average Covid Cases in SD")
+lines(1:45, fit.covid.221)
+legend("topleft",c("y(t)","yhat(t)"), pch=c(16, NA),lwd=c(NA,.5),cex=.55)
+
+```
+
+
+
+```{r}
+#First smooth function
+firstsmooth<-function(y,lambda,start=y[1]){ 
+    ytilde<-y
+    ytilde[1]<-lambda*y[1]+(1-lambda)*start 
+    for (i in 2:length(y))
+      {
+        ytilde[i]<-lambda*y[i]+(1-lambda)*ytilde[i-1]
+      }
+    ytilde
+}
+
+```
+
+
+```{r}
+measacc.fs<- function(y,lambda){
+  out<- firstsmooth(y,lambda)
+  T<-length(y)
+  #Smoothed version of the original is the one step ahead prediction
+  #Hence the predictions (forecasts) are given as 
+  pred<-c(y[1],out[1:(T-1)])
+  prederr<- y-pred
+  SSE<-sum(prederr^2) 
+  MAPE<-100*sum(abs(prederr/y))/T 
+  MAD<-sum(abs(prederr))/T
+  MSD<-sum(prederr^2)/T
+  ret1<-c(SSE,MAPE,MAD,MSD) 
+  names(ret1)<-c("SSE","MAPE","MAD","MSD") 
+  return(ret1)
+}
+```
+
+```{r}
+df.sd_7 <- as.data.frame(SD_7)
+HoltWinters(df.sd_7, beta=FALSE, gamma=FALSE)
+```
+
+
+```{r}
+df.sd_7 <- as.data.frame(SD_7)
+
+#Performs smoothing process with the optimum lambda and displays the fitted values
+smooth <- firstsmooth(df.sd_7[,1], 0.9454608)
+smooth
+
+#Displays the SSE of the corresponding lambda
+measacc.fs(df.sd_7[,1],0.9454608)
+```
+
+
+
+
+
+```{r}
+#Our ARIMA 221 model on top of the Covid cases in SD
+plot(SD_7, ,type="p",pch=16,cex=.5,xlab='Weeks',ylab='Weekly Covid Cases', ylim = c(0,1500), main="ARIMA model for average Covid Cases in SD")
+lines(1:45, fit.covid.221)
+legend("topleft",c("y(t)","yhat(t)"), pch=c(16, NA),lwd=c(NA,.5),cex=.55)
+
+
+#Plots the fitted values and the original values
+plot(smooth, type="l",col="black", xlab='Weeks', ylab='Weekly Covid Cases', main="Holt-Winters model for average Covid Cases in SD")
+lines(df.sd_7[,1],type="p",pch=16,cex=.5, col="black")
+legend("topleft",c("Original","Fitted"), pch=c(16, NA),lwd=c(NA,.5),cex=.55,col=c("black","black"))
+```
+```{r}
+#We will forecast 10 days ahead
+forecast.covid <-as.array(forecast(fit.covid.221, h = 10)) 
+forecast.covid
+
+
+
+# 1-5 step ahead forecasts
+forecast_crime <-as.array(forecast(smooth, h = 10)) 
+forecast_crime
+```
+
+
+```{r}
+#We plot the forecasted model
+plot(SD_7, ,type="p",pch=16,cex=.5,xlab='Week',ylab='Average weekly cases', ylim = c(0,2000), xlim = c(1,56), main="Forecasted Covid Cases in SD using ARIMA")
+lines(1:45, fit.covid.221) 
+lines(46:55,forecast.covid$mean,col="green") 
+lines(46:55,forecast.covid$lower[,2], col="blue")
+lines(46:55,forecast.covid$upper[,2], col="blue") 
+legend("topleft",c("Actual","Fitted","Forecast","95% LPL","95% UPL"), pch=c(16, NA, NA, NA,NA),lwd=c(NA,.5,.5,.5,.5),cex=.55,col=c("black","black","green","blue","bl ue"))
+
+
+#Plots the forecasted plot on top of actual and smoothed values
+plot(SD_7,type="p",pch=16,cex=.5,xlab='Week',ylab='Average weekly cases', xlim=c(1,56),ylim = c(0,2000), main = "Forecasted Covid Cases in SD using Holt-Winters")
+lines(1:45, smooth)
+lines(46:55,forecast_crime$mean,col="green") 
+lines(46:55,forecast_crime$lower[,2], col="blue") 
+lines(46:55,forecast_crime$upper[,2], col="blue") 
+legend("topleft",c("Actual","Fitted","Forecast","95% LPL","95% UPL"), pch=c(16, NA, NA, NA,NA),lwd=c(NA,.5,.5,.5,.5),cex=.55,col=c("black","black","green","blue","bl ue"))
+```
+
+
+```{r}
+library(lubridate)
+library(dplyr)
+library(readxl)
+COVID_Cases_over_time <- read_excel("/Users/mosharraf/Downloads/Exploratory and Cloud Data Analytics/Final Project/COVID Cases over time.xls")
+
+df_day = COVID_Cases_over_time %>% 
+  select(ds = date, y = new_death) %>%
+  mutate(ds = ymd(ds)) %>% 
+  filter(ds >= ymd(20200121)) %>% 
+  group_by(ds) %>% 
+  summarise(y = sum(y, na.rm = T)) %>% 
+  head(-1)
+```
+
+```{r}
+#Plots the daily deaths in the US
+plot(df_day, type='l', xlab = "Time", ylab = "Deaths", main = "Daily COVID deaths")
+```
+
+
+```{r}
+#Performs multiplicative smoothing and displays the graph
+y.ts<- ts(df_day[50:309,2], start = 1, freq = 2)
+
+liq.hw.mult<-HoltWinters(y.ts,alpha=0.1,beta=0.1,gamma=0.1, seasonal="multiplicative")
+plot(y.ts,type="p", pch=16,cex=.5,xlab='Day',ylab='Daily Death', main="Multiplicative Model", col="red")
+lines(liq.hw.mult$fitted[,1])
+legend("topleft", legend=c("Smooth", "Actual"),
+       col=c("black", "red"), lty=1:0, cex=0.8, pch=c(NA, 16))
+
+daily_death_covid <- as.data.frame(liq.hw.mult$fitted)
+```
+```{r}
+library(TSstudio)
+#Two sided average of seven days smoothing/decomposing model
+ap_smooth <- ts_ma(y.ts, n = 7, separate = FALSE)
+#ap_smooth$plot %>% layout(legend = list(x = 0.1, y = 0.9))
+
+```
+```{r}
+#ap_smooth$ma_7
+plot(y.ts,type="p", pch=16,cex=.5,xlab='Day',ylab='Daily Death', main="Two Sided Moving Average Model", col="red")
+lines(ap_smooth$ma_7)
+legend("topleft", legend=c("Smooth", "Actual"),
+       col=c("black", "red"), lty=1:0, cex=0.8, pch=c(NA, 16))
+```
+
+```{r}
+library(forecast)
+smooth_Death_daily <- as.vector(ap_smooth$ma_7)
+auto.arima(smooth_Death_daily)
+daily_death_covid
+
+```
+
+
+```{r}
+#Forecast based on two sided moving average
+forecast.death.daily <-as.array(forecast(smooth_Death_daily, h = 20)) 
+forecast.death.daily.multiplicative <-as.array(forecast(daily_death_covid$xhat, h = 20)) 
+
+```
+
+```{r}
+#plots the graph on top of the daily deaths
+plot(df_day$y, ,type="p",pch=16,cex=.5,xlab='Day',ylab='Daily deaths', ylim = c(0,5000), xlim = c(1,325), main="Two-Sided MA Forecasted Daily Covid Deaths in the US")
+lines(60:305, smooth_Death_daily) 
+lines(306:325,forecast.death.daily$mean,col="green") 
+lines(306:325,forecast.death.daily$lower[,2], col="blue")
+lines(306:325,forecast.death.daily$upper[,2], col="blue") 
+legend("topleft",c("Actual","Fitted","Forecast","95% LPL","95% UPL"), pch=c(16, NA, NA, NA,NA),lwd=c(NA,.5,.5,.5,.5),cex=.55,col=c("black","black","green","blue","bl ue"))
+
+
+plot(df_day$y, ,type="p",pch=16,cex=.5,xlab='Day',ylab='Daily deaths', ylim = c(0,5000), xlim = c(1,325), main="Holtwinters model Forecasted Daily Covid Deaths in the US")
+lines(52:309,liq.hw.mult$fitted[,1]) 
+lines(310:329,forecast.death.daily.multiplicative$mean,col="green") 
+lines(310:329,forecast.death.daily.multiplicative$lower[,2], col="blue")
+lines(310:329,forecast.death.daily.multiplicative$upper[,2], col="blue") 
+legend("topleft",c("Actual","Fitted","Forecast","95% LPL","95% UPL"), pch=c(16, NA, NA, NA,NA),lwd=c(NA,.5,.5,.5,.5),cex=.55,col=c("black","black","green","blue","bl ue"))
+
+```
+
+
+```{r}
+#Converts to weekly total deaths
+weekly.death<- sapply(split(df_day$y, c(0, rep(1:(nrow(df_day)-1)%/%7))), sum)
+weekly.death <- weekly.death[5:43]
+weekly.death <- as.matrix(weekly.death)
+rownames(weekly.death) <- 1:nrow(weekly.death)
+
+plot(weekly.death, type = 'l', xlab = "Weeks", ylab = "Weekly Deaths")
+
+```
+
+
+```{r}
+weekly.death <- as.vector(weekly.death)
+forecast.death.weekly <-as.array(forecast(weekly.death, h = 5)) 
+head(forecast.death.weekly)
+```
+
+
+```{r}
+plot(weekly.death, ,type="o",pch=16,cex=.5,xlab='Week',ylab='Weekly deaths', ylim = c(0,20000), xlim = c(1,45), main="Forecasted Weekly Covid Deaths in the US")
+#lines(60:305, smooth_Death_daily) 
+lines(40:44,forecast.death.weekly$mean,col="green") 
+lines(40:44,forecast.death.weekly$lower[,2], col="blue")
+lines(40:44,forecast.death.weekly$upper[,2], col="blue") 
+legend("topleft",c("Actual","Fitted","Forecast","95% LPL","95% UPL"), pch=c(16, NA, NA, NA,NA),lwd=c(NA,.5,.5,.5,.5),cex=.55,col=c("black","black","green","blue","bl ue"))
+```
+
+```{r}
+auto.arima(weekly.death)
+```
+
+```{r}
+#Creates AR1 model and displays the ACF and PACF of the residuals
+acf(weekly.death,lag.max=24,type="correlation",main="ACF of the Residuals \nof AR(1) Model")
+acf(weekly.death, lag.max=24,type="partial",main="PACF of the Residuals \nof AR(1) Model")
+
+covid.fit.ar1<-arima(weekly.death,order=c(1, 0, 0))
+res.covid.ar1<-as.vector(residuals(covid.fit.ar1))
+
+fit.covid.ar1<-as.vector(fitted(covid.fit.ar1))
+
+```
+
+```{r}
+#Plots the AR1 model on the Weekly death data
+plot(weekly.death,type="p",pch=16,cex=.5,xlab='Week',ylab='Weekly Deaths')
+lines(fit.covid.ar1)
+legend(95,88,c("y(t)","yhat(t)"), pch=c(16, NA),lwd=c(NA,.5), cex=.55)
+```
+
+```{r}
+# 1-20 step ahead forecasts
+forecast.weekly.deeath <-as.array(forecast(fit.covid.ar1, h = 5))
+forecast.weekly.deeath
+#forecast.weekly.deeath
+```
+
+```{r}
+plot(weekly.death, ,type="p",pch=16,cex=.5,xlab='Week',ylab='Weekly deaths', ylim = c(0,20000), xlim = c(1,45), main="Forecasted Weekly Covid Deaths in the US")
+lines(1:39, fit.covid.ar1) 
+lines(40:44,forecast.weekly.deeath$mean,col="green") 
+lines(40:44,forecast.weekly.deeath$lower[,2], col="blue")
+lines(40:44,forecast.weekly.deeath$upper[,2], col="blue") 
+legend("topleft",c("Actual","Fitted","Forecast","95% LPL","95% UPL"), pch=c(16, NA, NA, NA,NA),lwd=c(NA,.5,.5,.5,.5),cex=.55,col=c("black","black","green","blue","bl ue"))
+```
+
+
+```{r}
+par(mfrow=c(2,2),oma=c(0,0,0,0))
+qqnorm(res.covid.ar1,datax=TRUE,pch=16,xlab='Residual',main='')
+qqline(res.covid.ar1,datax=TRUE)
+plot(fit.covid.ar1,res.covid.ar1,pch=16, xlab='Fitted Value',
+ylab='Residual')
+abline(h=0)
+hist(res.covid.ar1,col="gray",xlab='Residual',main='')
+plot(res.covid.ar1,type="l",xlab='Observation Order',
+ylab='Residual')
+points(res.covid.ar1,pch=16,cex=.5)
+abline(h=0)
+```
+
+
+
+
+
+
